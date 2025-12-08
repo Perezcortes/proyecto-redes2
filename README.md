@@ -11,3 +11,5 @@ npx create-next-app@latest frontend
 cd frontend
 # Instalar una librería de iconos para que se vea pro
 npm install lucide-react
+
+https://gist.github.com/1UPNuke/ac6f6b2f6d7815927adf9484b3fb53d5
