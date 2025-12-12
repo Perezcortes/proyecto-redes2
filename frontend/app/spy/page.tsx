@@ -1,18 +1,9 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { Shield, Folder, FolderOpen, Lock, Terminal, Download, Database, FileText } from 'lucide-react';
+import { Shield, FolderOpen, Lock, Terminal, Radio, AlertTriangle, Clock, Activity, Heart, Skull } from 'lucide-react';
 
 type GameLog = { text: string; type: 'success' | 'info' | 'error' };
 type Node = { id: number; name: string; required_hacks: number };
-
-// Datos ficticios para simular la extracción
-const DUMMY_FILES = [
-  "extracting_users.db...",
-  "bypassing_firewall_rules.conf...",
-  "downloading_financial_records.xlsx...",
-  "decrypting_admin_keys.pem...",
-  "copying_surveillance_footage.mp4..."
-];
 
 export default function SpyPage() {
   const [messages, setMessages] = useState<GameLog[]>([]);
@@ -22,192 +13,216 @@ export default function SpyPage() {
   const [score, setScore] = useState(0);
   const [gameOver, setGameOver] = useState(false);
   const [status, setStatus] = useState('DESCONECTADO');
+  const [currentIntel, setCurrentIntel] = useState<string>('Esperando enlace...');
   
-  // Estado para la animación de descarga
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadFile, setDownloadFile] = useState('');
-  
-  // Referencia para saber si cambiamos de nivel
-  const prevNodeRef = useRef(0);
+  const [timeLeft, setTimeLeft] = useState(300);
+  // Nuevo estado para las vidas
+  const [lives, setLives] = useState(3);
+
   const ws = useRef<WebSocket | null>(null);
 
   useEffect(() => {
+    if (ws.current !== null) return;
     ws.current = new WebSocket('ws://localhost:8000/ws/spy');
-    ws.current.onopen = () => setStatus('EN LÍNEA');
     
+    ws.current.onopen = () => {
+        setStatus('EN LÍNEA');
+        setMessages(p => [{ text: "Enlace C&C establecido.", type: 'info' }, ...p]);
+    };
+    
+    ws.current.onclose = () => setStatus('DESCONECTADO');
+
     ws.current.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      try {
+          const data = JSON.parse(event.data);
 
-      if (data.type === 'state') {
-        setNodes(data.map);
-        setNodeProgress(data.nodeProgress);
-        setScore(data.score);
-        setGameOver(data.gameOver);
-        
-        // Lógica para detectar que completamos una carpeta
-        if (data.currentNode > prevNodeRef.current) {
-          triggerDownloadAnimation();
-        }
-        setCurrentNode(data.currentNode);
-        prevNodeRef.current = data.currentNode;
+          if (data.type === 'state') {
+            setNodes(data.map);
+            setNodeProgress(data.nodeProgress);
+            setScore(data.score);
+            setGameOver(data.gameOver);
+            if (data.currentIntel) setCurrentIntel(data.currentIntel);
+            setCurrentNode(data.currentNode);
+            if (data.timeLeft !== undefined) setTimeLeft(data.timeLeft);
+            // Actualizar vidas
+            if (data.lives !== undefined) setLives(data.lives);
+          
+          } else if (data.type === 'timer') {
+             setTimeLeft(data.time);
 
-      } else {
-        setMessages(prev => [{ text: data.message, type: data.type }, ...prev]);
+          } else {
+            setMessages(prev => [{ text: data.message, type: data.type }, ...prev].slice(0, 50));
+          }
+      } catch (e) {
+          console.error(e);
       }
     };
-    return () => ws.current?.close();
+    
+    return () => { ws.current?.close(); ws.current = null; };
   }, []);
 
-  const triggerDownloadAnimation = () => {
-    setIsDownloading(true);
-    let counter = 0;
-    
-    // Simular archivos pasando rápido
-    const interval = setInterval(() => {
-      setDownloadFile(DUMMY_FILES[counter % DUMMY_FILES.length]);
-      counter++;
-    }, 400);
-
-    // Terminar animación después de 3 segundos
-    setTimeout(() => {
-      clearInterval(interval);
-      setIsDownloading(false);
-    }, 3000);
-  };
-
   const restartGame = () => {
-    prevNodeRef.current = 0; // Reset ref
     ws.current?.send(JSON.stringify({ type: 'restart' }));
   };
 
-  return (
-    <div className="min-h-screen bg-slate-950 text-cyan-500 font-mono p-4 flex flex-col md:flex-row gap-4 relative">
-      
-      {/* --- OVERLAY DE DESCARGA (SIMULACIÓN) --- */}
-      {isDownloading && (
-        <div className="absolute inset-0 z-50 bg-black/90 flex flex-col items-center justify-center backdrop-blur-sm animate-in fade-in zoom-in duration-300">
-           <div className="w-full max-w-md p-6 border border-green-500 bg-green-950/20 rounded-lg text-center">
-              <Database className="w-16 h-16 text-green-500 mx-auto mb-4 animate-bounce" />
-              <h2 className="text-2xl font-bold text-white mb-2 blink">EXTRAYENDO DATOS...</h2>
-              <div className="font-mono text-green-400 text-sm mb-4 h-6">
-                {`> ${downloadFile}`}
-              </div>
-              
-              {/* Barra de progreso falsa */}
-              <div className="w-full bg-slate-800 h-4 rounded-full overflow-hidden relative">
-                 <div className="absolute top-0 left-0 h-full bg-green-500 animate-[progress_2s_ease-in-out_infinite] w-full origin-left"></div>
-              </div>
-              <p className="text-xs text-slate-400 mt-2">No apague el sistema.</p>
-           </div>
-        </div>
-      )}
+  const formatTime = (seconds: number) => {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
-      {/* COLUMNA IZQUIERDA: ÁRBOL DE DIRECTORIOS */}
-      <div className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-6 relative overflow-hidden flex flex-col">
-        <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
-          <h2 className="text-xl font-bold flex items-center gap-2">
-            <Shield className="text-cyan-400" /> FILE_SYSTEM_ROOT
-          </h2>
-          <div className="flex items-center gap-4">
-             <div className="text-xs px-2 py-1 rounded border border-slate-600 text-slate-400">
-                {status}
-             </div>
-             <div className="text-yellow-400 font-bold text-xl drop-shadow-[0_0_10px_rgba(250,204,21,0.5)]">
-               PTS: {score}
+  return (
+    <div className="min-h-screen bg-slate-950 text-cyan-500 font-mono p-4 flex flex-col gap-4 relative max-w-7xl mx-auto">
+      
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row justify-between items-center bg-slate-900 p-4 rounded border border-slate-800 gap-4">
+          <div className="flex items-center gap-3">
+            <Shield className="text-cyan-400 w-8 h-8" /> 
+            <div>
+                <h1 className="font-bold tracking-widest text-xl text-white">OPERACIÓN: FINAL COUNTDOWN</h1>
+                <div className="text-xs text-slate-400 flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${status === 'EN LÍNEA' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
+                    {status}
+                </div>
+            </div>
+          </div>
+
+          {/* CRONÓMETRO Y VIDAS */}
+          <div className="flex items-center gap-6">
+              {/* Vidas */}
+              <div className="flex gap-1 items-center bg-slate-950 px-4 py-2 rounded border border-red-900/30">
+                  <span className="text-xs text-red-400 mr-2 font-bold tracking-wider">VIDAS</span>
+                  {[...Array(3)].map((_, i) => (
+                      <Heart 
+                          key={i} 
+                          size={24} 
+                          className={`transition-all duration-300 ${i < lives ? 'fill-red-600 text-red-600 drop-shadow-[0_0_8px_rgba(220,38,38,0.8)]' : 'fill-none text-slate-800'}`}
+                      />
+                  ))}
+              </div>
+
+              {/* Reloj */}
+              <div className={`text-4xl md:text-5xl font-black font-mono px-6 py-2 rounded border-2 shadow-[0_0_20px_rgba(0,0,0,0.5)] flex items-center gap-4
+                ${timeLeft < 60 ? 'text-red-500 border-red-600 bg-red-950/30 animate-pulse' : 'text-cyan-400 border-cyan-800 bg-slate-950'}
+              `}>
+                 <Clock size={32} className={timeLeft < 60 ? 'animate-spin' : ''} />
+                 {formatTime(timeLeft)}
+              </div>
+          </div>
+
+          <div className="text-right">
+             <div className="text-xs text-slate-400 uppercase tracking-widest">Puntaje</div>
+             <div className="text-yellow-400 font-bold text-3xl drop-shadow-md">
+               {score.toString().padStart(5, '0')}
              </div>
           </div>
-        </div>
+      </div>
 
-        <div className="space-y-4 relative z-10 flex-1 overflow-y-auto">
-          {nodes.map((node, index) => {
-            const isActive = index === currentNode && !gameOver;
-            const isCompleted = index < currentNode || gameOver;
-            const isLocked = index > currentNode && !gameOver;
-
-            return (
-              <div 
-                key={node.id}
-                className={`p-4 rounded-lg border transition-all duration-500 flex items-center gap-4 relative overflow-hidden
-                  ${isActive ? 'bg-cyan-950/40 border-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.2)] scale-105' : ''}
-                  ${isCompleted ? 'bg-green-950/20 border-green-900 opacity-70' : ''}
-                  ${isLocked ? 'bg-slate-950 border-slate-800 opacity-40 grayscale' : ''}
-                `}
-              >
-                {/* Icono */}
-                <div className="shrink-0 relative z-10">
-                  {isCompleted ? <FolderOpen className="text-green-500" size={32} /> : 
-                   isActive ? <Download className="text-cyan-400 animate-pulse" size={32} /> :
-                   <Lock className="text-slate-500" size={32} />}
-                </div>
-
-                {/* Info */}
-                <div className="flex-1 relative z-10">
-                  <div className="flex justify-between items-center">
-                    <span className={`font-bold text-lg ${isActive ? 'text-white' : 'text-slate-400'}`}>
-                      {node.name}
-                    </span>
-                    {isActive && (
-                      <span className="text-[10px] bg-cyan-900 px-2 py-1 rounded text-cyan-200 border border-cyan-700 animate-pulse">
-                        DECRIPTANDO...
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Barra de Progreso del Nivel */}
-                  {isActive && (
-                    <div className="mt-2">
-                      <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-                        <span>Fuerza Bruta en proceso...</span>
-                        <span>{nodeProgress}/{node.required_hacks} Llaves</span>
-                      </div>
-                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                        <div 
-                          className="bg-cyan-400 h-full transition-all duration-300 shadow-[0_0_10px_rgba(34,211,238,0.8)]"
-                          style={{ width: `${(nodeProgress / node.required_hacks) * 100}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  )}
-                  {isCompleted && <div className="text-[10px] text-green-500 mt-1 flex items-center gap-1"><FileText size={10}/> DATOS EXFILTRADOS</div>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      <div className="flex flex-col md:flex-row gap-4 flex-1 overflow-hidden">
         
-        {/* Pantalla de Victoria */}
-        {gameOver && (
-          <div className="absolute inset-0 bg-black/90 flex items-center justify-center z-20 flex-col animate-in fade-in duration-1000">
-            <h2 className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-600 mb-4 tracking-tighter">SISTEMA VULNERADO</h2>
-            <p className="text-slate-400 mb-8">Todos los datos han sido transferidos al servidor remoto.</p>
-            <button onClick={restartGame} className="bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-3 rounded shadow-[0_0_20px_rgba(16,185,129,0.4)] transition-all font-bold tracking-wide">
-              INICIAR NUEVA OPERACIÓN
+        {/* COLUMNA IZQUIERDA: PISTA Y MAPA */}
+        <div className="flex-1 flex flex-col gap-4 overflow-y-auto">
+            
+            <div className="bg-amber-950/20 border-l-4 border-amber-500 rounded p-5 relative shadow-lg animate-in slide-in-from-left">
+                <div className="flex items-center gap-2 mb-2 text-amber-500 font-bold uppercase tracking-widest text-sm">
+                    <Radio size={18} className="animate-pulse"/> Transmisión de Inteligencia
+                </div>
+                <div className="text-xl md:text-2xl text-amber-100 font-bold leading-snug drop-shadow-sm">
+                    {currentIntel}
+                </div>
+                 <p className="text-amber-500/60 text-xs mt-3 flex items-center gap-1">
+                    <AlertTriangle size={12}/> Comunique esta información al agente de campo inmediatamente.
+                 </p>
+            </div>
+
+            <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-4 flex-1 flex flex-col gap-3 overflow-y-auto">
+                {nodes.map((node, index) => {
+                    const isActive = index === currentNode && !gameOver;
+                    const isCompleted = index < currentNode || gameOver;
+                    return (
+                    <div key={node.id} className={`p-4 rounded border transition-all flex items-center gap-4
+                        ${isActive ? 'bg-cyan-950/40 border-cyan-500/50 scale-[1.02] shadow-lg' : 'border-transparent bg-slate-950/50'}
+                        ${isCompleted ? 'opacity-50 grayscale' : ''}
+                    `}>
+                        <div className="shrink-0">
+                            {isCompleted ? <FolderOpen className="text-green-500"/> : 
+                             isActive ? <Activity className="text-cyan-400 animate-pulse"/> : <Lock className="text-slate-600"/>}
+                        </div>
+                        <div className="flex-1">
+                            <div className="flex justify-between items-center mb-1">
+                                <span className={`font-bold ${isActive ? 'text-white' : 'text-slate-500'}`}>{node.name}</span>
+                                {isActive && <span className="text-[10px] bg-cyan-900 text-cyan-200 px-2 rounded">EN PROGRESO</span>}
+                            </div>
+                            {isActive && (
+                                <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                                    <div className="bg-cyan-400 h-full transition-all duration-500" 
+                                         style={{ width: `${(nodeProgress / node.required_hacks) * 100}%` }}></div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    );
+                })}
+            </div>
+        </div>
+
+        {/* COLUMNA DERECHA: LOGS */}
+        <div className="w-full md:w-80 bg-black border border-slate-800 rounded flex flex-col font-mono text-xs h-64 md:h-auto shadow-2xl">
+            <div className="bg-slate-900 p-2 border-b border-slate-800 text-slate-400 flex gap-2 items-center">
+                <Terminal size={14}/> REGISTRO DEL SISTEMA
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 space-y-2 flex flex-col-reverse custom-scrollbar">
+                {messages.map((msg, i) => (
+                    <div key={i} className={`p-2 border-l-2 rounded bg-white/5 
+                        ${msg.type === 'error' ? 'border-red-500 text-red-400' : 
+                          msg.type === 'success' ? 'border-green-500 text-green-400' : 'border-cyan-500 text-cyan-300'}
+                    `}>
+                        <span className="opacity-50 text-[10px] block mb-1">{new Date().toLocaleTimeString()}</span>
+                        {msg.text}
+                    </div>
+                ))}
+            </div>
+        </div>
+      </div>
+
+       {/* PANTALLA DE GAME OVER / VICTORIA */}
+       {gameOver && (
+          <div className="absolute inset-0 bg-black/95 flex items-center justify-center z-50 flex-col animate-in zoom-in duration-300 backdrop-blur-sm">
+            
+            {/* LÓGICA DE DERROTA (CALAVERA) O VICTORIA */}
+            {(lives <= 0 || timeLeft <= 0) ? (
+                // PANTALLA DE DERROTA
+                <div className="flex flex-col items-center">
+                    <Skull size={120} className="text-red-600 mb-6 animate-pulse drop-shadow-[0_0_30px_rgba(220,38,38,0.6)]" />
+                    <h2 className="text-6xl font-black mb-2 tracking-tighter text-red-600 border-b-4 border-red-800 pb-2">
+                        MISIÓN PERDIDA
+                    </h2>
+                    <p className="text-red-400 text-xl font-mono mb-8 uppercase tracking-widest">
+                        {lives <= 0 ? "AGENTE ELIMINADO EN COMBATE" : "TIEMPO LÍMITE EXCEDIDO"}
+                    </p>
+                </div>
+            ) : (
+                // PANTALLA DE VICTORIA
+                <div className="flex flex-col items-center">
+                    <Shield size={120} className="text-green-500 mb-6 drop-shadow-[0_0_30px_rgba(34,197,94,0.6)]" />
+                    <h2 className="text-6xl font-black mb-2 tracking-tighter text-green-500 border-b-4 border-green-800 pb-2">
+                        MISIÓN CUMPLIDA
+                    </h2>
+                    <p className="text-green-400 text-xl font-mono mb-8 uppercase tracking-widest">
+                        SISTEMA VULNERADO EXITOSAMENTE
+                    </p>
+                </div>
+            )}
+
+            <div className="text-2xl text-white mb-8 font-mono bg-white/10 px-6 py-2 rounded">
+                PUNTAJE FINAL: <span className="text-yellow-400 font-bold">{score}</span>
+            </div>
+            
+            <button onClick={restartGame} className="bg-white hover:bg-slate-200 text-black px-10 py-4 rounded font-bold hover:scale-105 transition-all shadow-[0_0_20px_rgba(255,255,255,0.3)]">
+              REINICIAR OPERACIÓN
             </button>
           </div>
         )}
-      </div>
-
-      {/* COLUMNA DERECHA: LOGS */}
-      <div className="w-full md:w-80 bg-black border border-slate-800 rounded-lg p-4 flex flex-col h-64 md:h-auto font-mono text-xs shadow-xl">
-        <h3 className="text-slate-500 text-[10px] border-b border-slate-800 pb-2 mb-2 flex items-center gap-2 uppercase tracking-widest">
-          <Terminal size={12} /> Network_Logs
-        </h3>
-        <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
-          {messages.map((msg, i) => (
-            <div 
-              key={i} 
-              className={`p-2 border-l-2 rounded bg-opacity-10 ${
-                msg.type === 'success' ? 'border-green-500 text-green-400 bg-green-900' :
-                msg.type === 'error' ? 'border-red-500 text-red-400 bg-red-900' :
-                'border-cyan-500 text-cyan-300 bg-cyan-900'
-              }`}
-            >
-              <span className="opacity-50 mr-2">[{new Date().toLocaleTimeString([], {hour12: false})}]</span>
-              {msg.text}
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
