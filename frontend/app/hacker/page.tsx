@@ -33,14 +33,15 @@ const INITIAL_LOGS = [
 ];
 
 export default function HackerPage() {
-  // Iniciamos directamente con el arte
   const [history, setHistory] = useState<string[]>([]);
   const [input, setInput] = useState('');
   const [status, setStatus] = useState('OFFLINE');
+  // NUEVO: Estado para el tiempo
+  const [timeLeft, setTimeLeft] = useState('--');
+  
   const ws = useRef<WebSocket | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Función para limpiar pantalla respetando el arte
   const resetTerminal = () => {
       setHistory([...NEOFETCH_ART, '', '>>> SYSTEM REBOOT SEQUENCE INITIATED...', '>>> MEMORY CLEARED.', '']);
   };
@@ -50,18 +51,24 @@ export default function HackerPage() {
 
     ws.current.onopen = () => {
       setStatus('ONLINE');
-      // Al conectar cargamos el Neofetch inicial
       setHistory(INITIAL_LOGS);
     };
 
     ws.current.onmessage = (event) => {
       const data = JSON.parse(event.data);
       
-      // LOGICA DE AUTO-LIMPIEZA AL REINICIAR
-      // Si el mensaje dice "REINICIANDO", limpiamos la terminal
-      if (data.message && typeof data.message === 'string' && data.message.includes('REINICIANDO SISTEMA')) {
+      // --- FIX 1: Manejar el Timer sin imprimir basura ---
+      if (data.type === 'timer') {
+          setTimeLeft(data.time + 's');
+          return; // Importante: Salimos aquí para no imprimir nada
+      }
+
+      // --- FIX 2: Ignorar mensajes vacíos (undefined) ---
+      if (!data.message) return;
+
+      if (typeof data.message === 'string' && data.message.includes('REINICIANDO SIMULACIÓN')) {
           resetTerminal();
-          return; // No imprimimos el mensaje viejo, ya pusimos el de reboot
+          return;
       }
 
       const prefix = data.type === 'puzzle' ? '>>> [TARGET_SYSTEM]: ' : '[KERNEL]: ';
@@ -88,17 +95,16 @@ export default function HackerPage() {
     e.preventDefault();
     if (!input.trim() || !ws.current) return;
 
-    // COMANDO CLEAR MANUAL
     if (input.trim() === 'clear') {
-        // Mantenemos el Neofetch limpio
         setHistory([...NEOFETCH_ART, '', 'Console cleared.', '']);
         setInput('');
-        return; // No enviamos 'clear' al servidor, es un comando local
+        return;
     }
 
     setHistory(prev => [...prev, `[root@arch-cyber-deck ~]# ${input}`]);
     
-    const payload = { type: 'chat', message: input };
+    // --- FIX 3: Enviar type 'command' en lugar de 'chat' ---
+    const payload = { type: 'command', message: input };
     ws.current.send(JSON.stringify(payload));
     
     setInput('');
@@ -114,8 +120,13 @@ export default function HackerPage() {
           <div className="w-3 h-3 rounded-full bg-[#27c93f]"></div>
         </div>
         <div className="text-xs text-[#565f89]">root@arch-cyber-deck: ~ (zsh)</div>
-        <div className={`text-xs font-bold ${status === 'ONLINE' ? 'text-[#9ece6a]' : 'text-[#f7768e]'}`}>
-          {status}
+        
+        {/* NUEVO: Mostrar el tiempo aquí */}
+        <div className="flex gap-4 text-xs font-bold">
+            <span className="text-yellow-400">T-MINUS: {timeLeft}</span>
+            <span className={status === 'ONLINE' ? 'text-[#9ece6a]' : 'text-[#f7768e]'}>
+              {status}
+            </span>
         </div>
       </div>
 
@@ -125,10 +136,12 @@ export default function HackerPage() {
           <div key={i} className="break-words whitespace-pre-wrap leading-tight">
             {line.includes('root@') ? (
                <span className="text-[#7aa2f7]">{line}</span>
-            ) : line.includes('TARGET_SYSTEM') ? (
+            ) : line.includes('TARGET') ? (
                <span className="text-[#e0af68] font-bold">{line}</span>
             ) : line.includes('ERROR') ? (
                <span className="text-[#f7768e]">{line}</span>
+            ) : line.includes('SUCCESS') || line.includes('CORRECTO') ? (
+               <span className="text-[#9ece6a]">{line}</span>
             ) : (
                <span>{line}</span>
             )}

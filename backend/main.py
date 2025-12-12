@@ -1,50 +1,112 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from typing import Dict, List
+from typing import Dict, List, Optional
 import asyncio
+import json
 
 app = FastAPI()
 
-# Definimos la estructura del "Sistema de Archivos"
+# --- CONFIGURACIÓN DE NIVELES ---
 GAME_MAP = [
     {
         "id": 0,
-        "name": "/ROOT_GATEWAY",
-        "required_hacks": 1,
+        "name": "/GATEWAY_PERIMETRAL",
+        "required_hacks": 2,
         "puzzles": [
-            {"q": "Binario a Decimal: 101", "a": "5"}
+            {
+                "hacker_prompt": "ERROR 401. Se requiere CÓDIGO DE ACCESO temporal.",
+                "spy_intel": "Interceptación de Radio: El código es el año 2025 invertido.",
+                "a": "5202"
+            },
+            {
+                "hacker_prompt": "BIO-SCAN SOLICITADO. Ingrese secuencia de colores.",
+                "spy_intel": "Biometría: La secuencia válida es rgb (rva).",
+                "a": "rojo-verde-azul"
+            }
         ]
     },
     {
         "id": 1,
-        "name": "/SYSTEM32_SECURE",
-        "required_hacks": 2, # Requiere 2 aciertos para pasar
+        "name": "/FIREWALL_LOGIC",
+        "required_hacks": 2,
         "puzzles": [
-            {"q": "Hexadecimal 'A' a Decimal", "a": "10"},
-            {"q": "Resuelve: 2 + 2 * 2", "a": "6"} # Ojo con la jerarquía
+            {
+                "hacker_prompt": "CÁLCULO DE PUERTO: Resuelve para obtener el puerto: 8 ÷ 2(2 + 2)",
+                "spy_intel": "Alerta de Sintaxis: Cuidado con la jerarquía. 1) Paréntesis . 2) División . 3) Multiplicación .",
+                "a": "16"
+            },
+             {
+                "hacker_prompt": "COMPLETE LA SECUENCIA: 2, 3, 5, 7, 11, __, 17",
+                "spy_intel": "Análisis Numérico: Son números PRIMOS. El primo entre 11 y 17 es...",
+                "a": "13"
+            }
         ]
     },
     {
         "id": 2,
-        "name": "/CONFIDENTIAL_DB",
-        "required_hacks": 3, # Nivel difícil, 3 aciertos
+        "name": "/NODE_TRAFFIC_ANALYSIS",
+        "required_hacks": 2, 
         "puzzles": [
-            {"q": "¿Raíz de 81?", "a": "9"},
-            {"q": "Siguiente primo después de 7", "a": "11"},
-            {"q": "Bits en un Byte", "a": "8"}
+            {
+                "hacker_prompt": "CRITICAL: Identificar nodo corrupto en la red malla. Opciones: [ALPHA, BRAVO, CHARLIE, DELTA]",
+                "spy_intel": "Mapa de Calor: El nodo CHARLIE está enviando 500% más paquetes que el resto. Es un ataque DDoS.",
+                "a": "charlie"
+            },
+            {
+                "hacker_prompt": "OVERRIDE PROTOCOL. Ingrese la máscara de subred para /24.",
+                "spy_intel": "Hoja de Trucos de Red: /24 siempre equivale a tres 255 seguidos y un 0 (formato x.x.x.x).",
+                "a": "255.255.255.0"
+            }
+        ]
+    },
+    {
+        "id": 3,
+        "name": "/CORE_ENCRYPTION_LAYER",
+        "required_hacks": 3,
+        "puzzles": [
+            {
+                "hacker_prompt": "DECRYPT MESSAGE: 'VQR ugetgv'",
+                "spy_intel": "Cifrado César: ROT-2 (Mueve cada letra 2 espacios atrás). V->T, Q->O, R->P.",
+                "a": "top secret"
+            },
+            {
+                "hacker_prompt": "HEX DUMP ANALYSIS. ¿Cuál es el byte de la muerte? 0xDEAD, 0xBEEF, 0xCAFE",
+                "spy_intel": "Informe Forense: El malware se firma siempre con una referencia a comida.",
+                "a": "0xcafe"
+            },
+            {
+                # MODIFICADO: Lógica Booleana (Respuesta fija pero desafiante)
+                "hacker_prompt": "SISTEMA DE AUTODESTRUCCIÓN. Resuelve: (1 AND 0) OR 1. ¿Cortar cable AZUL (0) o ROJO (1)?",
+                "spy_intel": "Esquema Lógico: El resultado de la operación matemática indica qué cable es seguro cortar. (Recuerda: AND multiplica, OR suma. 0=Azul, 1=Rojo).",
+                "a": "rojo" 
+                # Explicación: 
+                # (1 AND 0) es 0. 
+                # (0 OR 1) es 1. 
+                # La respuesta es 1, que corresponde al ROJO según el prompt.
+            }
         ]
     }
 ]
 
+# Configuración Global
+INITIAL_TIME = 90 #  Minutos
+INITIAL_LIVES = 3  # 3 Vidas
+
 class GameState:
+    # CORREGIDO: __init__ con doble guion bajo
     def __init__(self):
         self.current_node_index = 0
-        self.current_hack_progress = 0 # Cuántos puzzles lleva resueltos en el nodo actual
+        self.current_hack_progress = 0
         self.score = 0
         self.game_over = False
+        self.time_left = INITIAL_TIME
+        self.lives = INITIAL_LIVES # Nueva variable
+        self.timer_task = None
+        self.status_message = "SISTEMA EN ESPERA"
 
-    def get_current_puzzle(self):
+    def get_current_puzzle_data(self) -> Optional[Dict[str, str]]:
+        if self.current_node_index >= len(GAME_MAP):
+             return None
         node = GAME_MAP[self.current_node_index]
-        # Obtenemos el puzzle correspondiente al progreso actual
         if self.current_hack_progress < len(node["puzzles"]):
             return node["puzzles"][self.current_hack_progress]
         return None
@@ -54,8 +116,12 @@ class GameState:
         self.current_hack_progress = 0
         self.score = 0
         self.game_over = False
+        self.time_left = INITIAL_TIME
+        self.lives = INITIAL_LIVES
+        self.status_message = "SISTEMA REINICIADO"
 
 class GameManager:
+    # CORREGIDO: __init__ con doble guion bajo
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
         self.state = GameState()
@@ -64,89 +130,159 @@ class GameManager:
         await websocket.accept()
         self.active_connections[role] = websocket
         
-        # Si ambos están, sincronizamos
+        if role == "spy":
+             await self.update_game_state()
+
         if "hacker" in self.active_connections and "spy" in self.active_connections:
-            await self.broadcast_game_status("CONEXIÓN ESTABLECIDA. INICIANDO INFILTRACIÓN...")
-            await self.send_puzzle()
-            await self.update_spy_view()
+            if not self.state.timer_task:
+                 self.state.reset()
+                 self.state.timer_task = asyncio.create_task(self.game_loop())
+            
+            await self.broadcast({"type": "info", "message": "CONEXIÓN ESTABLECIDA. INICIANDO OPERACIÓN."})
+            await self.send_puzzle_to_hacker()
+            await self.update_game_state()
 
     async def disconnect(self, role: str):
         if role in self.active_connections:
             del self.active_connections[role]
+        await self.broadcast({"type": "error", "message": f"ALERTA: {role.upper()} SE HA DESCONECTADO."})
 
-    async def broadcast_game_status(self, message: str, msg_type="info"):
-        for ws in self.active_connections.values():
-            await ws.send_json({"type": msg_type, "message": message})
-
-    async def send_puzzle(self):
-        if "hacker" in self.active_connections and not self.state.game_over:
-            puzzle = self.state.get_current_puzzle()
-            if puzzle:
-                await self.active_connections["hacker"].send_json({
-                    "type": "puzzle",
-                    "message": f"NODO {GAME_MAP[self.state.current_node_index]['name']} [{self.state.current_hack_progress + 1}/{GAME_MAP[self.state.current_node_index]['required_hacks']}]: {puzzle['q']}"
+    async def game_loop(self):
+        try:
+            while self.state.time_left > 0 and not self.state.game_over:
+                await asyncio.sleep(1)
+                self.state.time_left -= 1
+                
+                # Enviar actualización ligera del tiempo
+                await self.broadcast({
+                    "type": "timer", 
+                    "time": self.state.time_left
                 })
 
-    async def update_spy_view(self):
+                if self.state.time_left <= 0:
+                    self.state.game_over = True
+                    self.state.status_message = "TIEMPO AGOTADO"
+                    await self.broadcast({"type": "error", "message": "¡TIEMPO AGOTADO! MISIÓN FALLIDA."})
+                    await self.update_game_state()
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self.state.timer_task = None
+
+    async def broadcast(self, message: dict):
+        current_sockets = list(self.active_connections.values())
+        for ws in current_sockets:
+            try:
+                await ws.send_json(message)
+            except Exception:
+                pass 
+
+    async def send_puzzle_to_hacker(self):
+        if "hacker" in self.active_connections and not self.state.game_over:
+            puzzle_data = self.state.get_current_puzzle_data()
+            if puzzle_data:
+                node = GAME_MAP[self.state.current_node_index]
+                progress_txt = f"[{self.state.current_hack_progress + 1}/{node['required_hacks']}]"
+                
+                await self.active_connections["hacker"].send_json({
+                    "type": "puzzle",
+                    "message": f"[TARGET: {node['name']}] {progress_txt}:\n> {puzzle_data['hacker_prompt']}"
+                })
+
+    async def update_game_state(self):
         if "spy" in self.active_connections:
-            # Enviamos el mapa completo y dónde está el usuario
+            current_intel = "Esperando al Hacker..."
+            if not self.state.game_over and "hacker" in self.active_connections:
+                 puzzle_data = self.state.get_current_puzzle_data()
+                 current_intel = puzzle_data["spy_intel"] if puzzle_data else "Sincronizando..."
+            elif self.state.game_over:
+                current_intel = self.state.status_message
+
             await self.active_connections["spy"].send_json({
                 "type": "state",
                 "map": GAME_MAP,
                 "currentNode": self.state.current_node_index,
                 "nodeProgress": self.state.current_hack_progress,
                 "score": self.state.score,
-                "gameOver": self.state.game_over
+                "gameOver": self.state.game_over,
+                "currentIntel": current_intel,
+                "timeLeft": self.state.time_left,
+                "lives": self.state.lives # Enviamos vidas al frontend
             })
 
     async def process_hacker_command(self, answer: str):
-        puzzle = self.state.get_current_puzzle()
-        if not puzzle: return
+        if self.state.game_over: return
 
-        if answer.strip() == puzzle["a"]:
-            # RESPUESTA CORRECTA
+        puzzle_data = self.state.get_current_puzzle_data()
+        if not puzzle_data: return
+
+        normalized_answer = answer.strip().lower()
+        correct_answer = puzzle_data["a"].lower()
+        
+        is_correct = normalized_answer == correct_answer
+        if len(correct_answer) == 1 and correct_answer in normalized_answer: is_correct = True
+
+        if is_correct:
             self.state.current_hack_progress += 1
-            self.state.score += 50
-            await self.broadcast_game_status("¡CÓDIGO ACEPTADO! PROTOCOLO AVANZANDO...", "success")
+            self.state.score += 100 
+            # Bonus de tiempo
+            self.state.time_left += 10
+            await self.broadcast({"type": "success", "message": "COMANDO CORRECTO. +10s."})
 
-            # Verificar si completó el nodo (carpeta)
-            current_node = GAME_MAP[self.state.current_node_index]
-            if self.state.current_hack_progress >= current_node["required_hacks"]:
-                # Nodo completado, pasamos al siguiente
+            node = GAME_MAP[self.state.current_node_index]
+            if self.state.current_hack_progress >= node["required_hacks"]:
                 self.state.current_node_index += 1
-                self.state.current_hack_progress = 0 # Reset progreso para el nuevo nodo
+                self.state.current_hack_progress = 0
+                self.state.score += 300
                 
                 if self.state.current_node_index >= len(GAME_MAP):
                     self.state.game_over = True
-                    await self.broadcast_game_status("¡ACCESO ROOT CONCEDIDO! SISTEMA VULNERADO.", "success")
+                    self.state.status_message = "VICTORIA"
+                    await self.broadcast({"type": "success", "message": "¡SISTEMA VULNERADO CON ÉXITO!"})
                 else:
-                    await self.broadcast_game_status(f"ACCEDIENDO A {GAME_MAP[self.state.current_node_index]['name']}...", "info")
+                    await self.broadcast({"type": "info", "message": f"Accediendo a {GAME_MAP[self.state.current_node_index]['name']}..."})
             
-            await self.update_spy_view()
+            await self.update_game_state()
             if not self.state.game_over:
-                await self.send_puzzle()
+                await asyncio.sleep(1)
+                await self.send_puzzle_to_hacker()
 
         else:
-            # RESPUESTA INCORRECTA (PENALIZACIÓN)
-            await self.broadcast_game_status("¡ERROR DE SINTAXIS! ALERTA DE SEGURIDAD.", "error")
+            # ERROR: Restar vida y tiempo
+            self.state.lives -= 1
+            self.state.time_left = max(0, self.state.time_left - 15)
+            self.state.score = max(0, self.state.score - 50)
             
-            # Lógica de castigo: Si fallas, pierdes el progreso de la carpeta actual
-            if self.state.current_hack_progress > 0:
-                self.state.current_hack_progress = 0
-                await self.broadcast_game_status("PROGRESO DEL NODO REINICIADO POR SEGURIDAD.", "error")
-            
-            # Castigo severo: Si fallas al inicio, podrías retroceder de nodo (opcional)
-            # elif self.state.current_node_index > 0:
-            #     self.state.current_node_index -= 1
-            
-            await self.update_spy_view()
-            await self.send_puzzle() # Reenvía el puzzle (o el anterior si se reinició)
+            error_msg = f"ERROR DE COMANDO. VIDAS RESTANTES: {self.state.lives}"
+            await self.broadcast({"type": "error", "message": error_msg})
+
+            # Check de Game Over por vidas
+            if self.state.lives <= 0:
+                self.state.game_over = True
+                self.state.status_message = "AGENTE CAÍDO EN COMBATE"
+                await self.broadcast({"type": "error", "message": "¡SISTEMA BLOQUEADO! DEMASIADOS INTENTOS FALLIDOS."})
+            else:
+                # Reiniciar progreso del nodo actual (castigo adicional)
+                if self.state.current_hack_progress > 0:
+                    self.state.current_hack_progress = 0
+                    await self.broadcast({"type": "error", "message": "PROGRESO DEL NODO PERDIDO."})
+
+            await self.update_game_state()
+            # Reenviar puzzle
+            if not self.state.game_over:
+                await self.send_puzzle_to_hacker()
 
     async def restart_game(self):
+        if self.state.timer_task:
+            self.state.timer_task.cancel()
+        
         self.state.reset()
-        await self.broadcast_game_status("REINICIANDO SISTEMA...")
-        await self.update_spy_view()
-        await self.send_puzzle()
+        self.state.timer_task = asyncio.create_task(self.game_loop())
+        
+        await self.broadcast({"type": "info", "message": "REINICIANDO SIMULACIÓN..."})
+        await self.update_game_state()
+        if "hacker" in self.active_connections:
+             await self.send_puzzle_to_hacker()
 
 game_manager = GameManager()
 
@@ -158,7 +294,9 @@ async def websocket_endpoint(websocket: WebSocket, role: str):
             data = await websocket.receive_json()
             if data.get("type") == "restart":
                 await game_manager.restart_game()
-            elif role == "hacker":
+            elif role == "hacker" and data.get("type") == "command":
                 await game_manager.process_hacker_command(str(data.get("message", "")))
     except WebSocketDisconnect:
+        await game_manager.disconnect(role)
+    except Exception:
         await game_manager.disconnect(role)
