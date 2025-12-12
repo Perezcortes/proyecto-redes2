@@ -19,7 +19,7 @@ GAME_MAP = [
             },
             {
                 "hacker_prompt": "BIO-SCAN SOLICITADO. Ingrese secuencia de colores.",
-                "spy_intel": "Biometría: La secuencia válida es rgb (rva).",
+                "spy_intel": "Biometría: La secuencia válida es rgb unida con guiones (rva).",
                 "a": "rojo-verde-azul"
             }
         ]
