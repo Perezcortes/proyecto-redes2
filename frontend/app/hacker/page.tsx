@@ -47,7 +47,11 @@ export default function HackerPage() {
   };
 
   useEffect(() => {
+    // LOCALHOST (Para desarrollo local):
     ws.current = new WebSocket('ws://localhost:8000/ws/hacker');
+
+    // AHORA (Pon la IP real de tu Paso 1):
+    //ws.current = new WebSocket('ws://192.168.1.50:8000/ws/hacker');
 
     ws.current.onopen = () => {
       setStatus('ONLINE');

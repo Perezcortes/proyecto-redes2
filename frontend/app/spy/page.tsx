@@ -23,7 +23,11 @@ export default function SpyPage() {
 
   useEffect(() => {
     if (ws.current !== null) return;
+    // LOCALHOST (Para desarrollo local):
     ws.current = new WebSocket('ws://localhost:8000/ws/spy');
+    
+    // AHORA (Pon la IP real ):
+    //ws.current = new WebSocket('ws://192.168.1.50:8000/ws/spy');
     
     ws.current.onopen = () => {
         setStatus('EN LÍNEA');
